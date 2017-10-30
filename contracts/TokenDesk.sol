@@ -163,7 +163,7 @@ contract TokenDesk is TokenERC20 {
         string tokenSymbol
     )
     */
-    function TokenDesk() TokenERC20(20000000, "0.07TDS", "TDS") public {
+    function TokenDesk() TokenERC20(20000000, "TokenDesk", "TDS") public {
     }
 
     function assign (address[] _addresses, uint[] _values) public
