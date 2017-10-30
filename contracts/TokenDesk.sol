@@ -151,3 +151,37 @@ contract TokenERC20 {
         return true;
     }
 }
+
+contract TokenDesk is TokenERC20 {
+
+    address public owner = msg.sender;
+
+    /**
+    * TokenERC20(
+        uint256 initialSupply,
+        string tokenName,
+        string tokenSymbol
+    )
+    */
+    function TokenDesk() TokenERC20(20000000, "0.07TDS", "TDS") public {
+    }
+
+    function assign (address[] _addresses, uint[] _values) public
+    only_creator
+    {
+        for (uint i = 0; i < _addresses.length; i++) {
+            address who = _addresses[i];
+            uint val = _values[i] * 10 ** uint256(decimals);
+
+            if (balanceOf[who] != val) {
+                transfer(who, val);
+            }
+        }
+    }
+
+    modifier only_creator () {
+        require(msg.sender == owner);
+        _;
+    }
+
+}
