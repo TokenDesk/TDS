@@ -90,6 +90,63 @@ contract ERC20 is ERC20Basic {
 }
 
 /**
+ * @title SafeERC20
+ * @dev Wrappers around ERC20 operations that throw on failure.
+ * To use this library you can add a `using SafeERC20 for ERC20;` statement to your contract,
+ * which allows you to call the safe operations as `token.safeTransfer(...)`, etc.
+ */
+library SafeERC20 {
+  function safeTransfer(ERC20Basic token, address to, uint256 value) internal {
+    assert(token.transfer(to, value));
+  }
+
+  function safeTransferFrom(ERC20 token, address from, address to, uint256 value) internal {
+    assert(token.transferFrom(from, to, value));
+  }
+
+  function safeApprove(ERC20 token, address spender, uint256 value) internal {
+    assert(token.approve(spender, value));
+  }
+}
+
+/**
+ * @title TokenTimelock
+ * @dev TokenTimelock is a token holder contract that will allow a
+ * beneficiary to extract the tokens after a given release time
+ */
+contract TokenTimelock {
+  using SafeERC20 for ERC20Basic;
+
+  // ERC20 basic token contract being held
+  ERC20Basic public token;
+
+  // beneficiary of tokens after they are released
+  address public beneficiary;
+
+  // timestamp when token release is enabled
+  uint64 public releaseTime;
+
+  function TokenTimelock(ERC20Basic _token, address _beneficiary, uint64 _releaseTime) public {
+    require(_releaseTime > now);
+    token = _token;
+    beneficiary = _beneficiary;
+    releaseTime = _releaseTime;
+  }
+
+  /**
+   * @notice Transfers tokens held by timelock to beneficiary.
+   */
+  function release() public {
+    require(now >= releaseTime);
+
+    uint256 amount = token.balanceOf(this);
+    require(amount > 0);
+
+    token.safeTransfer(beneficiary, amount);
+  }
+}
+
+/**
  * @title Standard ERC20 token
  *
  * @dev Implementation of the basic standard token.
@@ -183,10 +240,9 @@ contract Owned {
     }
 }
 
-
 /// TokenDesk token contract ///
 contract TokenDeskToken is StandardToken, Owned {
-    string public constant name = "TokenDeskCoin";
+    string public constant name = "TokenDesk";
     string public constant symbol = "TDC";
     uint256 public constant decimals = 18;
 
@@ -197,9 +253,16 @@ contract TokenDeskToken is StandardToken, Owned {
     uint256 public constant TOKENS_SALE_HARD_CAP = 14000000 * 10**decimals;
 
     bool public tokenSaleClosed = false;
+    
+    // contract to be called to release the TD team tokens
+    address public timelockContractAddress;
 
-    uint64 date24Dec2017 = 1514073600; // seconds since 01.01.1970 to 24.12.2017 (both 00:00:00 o'clock UTC)
+    // seconds since 01.01.1970 to 24.12.2017 (both 00:00:00 o'clock UTC)
+    uint64 date24Dec2017 = 1514073600; 
 
+    // seconds since 01.01.1970 to 01.01.2019 (both 00:00:00 o'clock UTC)
+    uint64 date01Jan2019 = 1546300800; 
+   
     modifier inProgress {
         assert(!saleHardCapReached() && !tokenSaleClosed);
         _;
@@ -218,8 +281,9 @@ contract TokenDeskToken is StandardToken, Owned {
 
     function issueTokensMulti(address[] _addresses, uint256[] _tokensInteger) public onlyOwner inProgress {
         require(_addresses.length == _tokensInteger.length);
+        require(_addresses.length <= 100);
 
-        for (uint256 i = 0; i < _tokensInteger.length; i++) {
+        for (uint256 i = 0; i < _tokensInteger.length; i = i.add(1)) {
             address investor = _addresses[i];
             uint256 tokens = _tokensInteger[i];
 
@@ -230,7 +294,7 @@ contract TokenDeskToken is StandardToken, Owned {
     function issueTokens(address _investor, uint256 _tokensInteger) public onlyOwner inProgress {
         require(_investor != address(0));
 
-        uint256 tokens = _tokensInteger * 10**decimals;
+        uint256 tokens = _tokensInteger.mul(10**decimals);
         // compute without actually increasing it
         uint256 increasedTotalSupply = totalSupply.add(tokens);
         // roll back if hard cap reached
@@ -258,9 +322,13 @@ contract TokenDeskToken is StandardToken, Owned {
             teamTokens = TOKENS_HARD_CAP.sub(totalSupply);
         }
 
-        // increase token total supply
+        /// lock until 01 Jan 2019
+        TokenTimelock lockedTeamTokens = new TokenTimelock(this, owner, date01Jan2019);
+        timelockContractAddress = address(lockedTeamTokens);
+        balances[timelockContractAddress] = balances[timelockContractAddress].add(teamTokens);
+        
+        /// increase token total supply
         totalSupply = totalSupply.add(teamTokens);
-        balances[owner] = balances[owner].add(teamTokens);
 
         tokenSaleClosed = true;
     }
