@@ -1,31 +1,31 @@
-pragma solidity ^0.4.18;
+pragma solidity 0.4.18;
 
 /**
  * @title SafeMath
  * @dev Math operations with safety checks that throw on error
  */
 library SafeMath {
-    function mul(uint256 a, uint256 b) internal constant returns (uint256) {
+    function mul(uint256 a, uint256 b) internal pure returns (uint256) {
         uint256 c = a * b;
         assert(a == 0 || c / a == b);
         return c;
     }
 
-    function div(uint256 a, uint256 b) internal constant returns (uint256) {
+    function div(uint256 a, uint256 b) internal pure returns (uint256) {
         // assert(b > 0); // Solidity automatically throws when dividing by 0
         uint256 c = a / b;
         // assert(a == b * c + a % b); // There is no case in which this doesn't hold
         return c;
     }
 
-    function sub(uint256 a, uint256 b) internal constant returns (uint256) {
+    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
         assert(b <= a);
         return a - b;
     }
 
-    function add(uint256 a, uint256 b) internal constant returns (uint256) {
+    function add(uint256 a, uint256 b) internal pure returns (uint256) {
         uint256 c = a + b;
-        assert(c >= a);
+        require(c >= a);
         return c;
     }
 }
@@ -37,7 +37,7 @@ library SafeMath {
  */
 contract ERC20Basic {
     uint256 public totalSupply;
-    function balanceOf(address who) public constant returns (uint256);
+    function balanceOf(address who) public view returns (uint256);
     function transfer(address to, uint256 value) public returns (bool);
     event Transfer(address indexed from, address indexed to, uint256 value);
 }
@@ -49,7 +49,7 @@ contract ERC20Basic {
 contract BasicToken is ERC20Basic {
     using SafeMath for uint256;
 
-    mapping(address => uint256) balances;
+    mapping(address => uint256) public balances;
 
     /**
     * @dev transfer token for a specified address
@@ -72,7 +72,7 @@ contract BasicToken is ERC20Basic {
     * @param _owner The address to query the the balance of.
     * @return An uint256 representing the amount owned by the passed address.
     */
-    function balanceOf(address _owner) public constant returns (uint256 balance) {
+    function balanceOf(address _owner) public view returns (uint256 balance) {
         return balances[_owner];
     }
 
@@ -83,7 +83,7 @@ contract BasicToken is ERC20Basic {
  * @dev see https://github.com/ethereum/EIPs/issues/20
  */
 contract ERC20 is ERC20Basic {
-    function allowance(address owner, address spender) public constant returns (uint256);
+    function allowance(address owner, address spender) public view returns (uint256);
     function transferFrom(address from, address to, uint256 value) public returns (bool);
     function approve(address spender, uint256 value) public returns (bool);
     event Approval(address indexed owner, address indexed spender, uint256 value);
@@ -127,7 +127,7 @@ contract TokenTimelock {
   uint64 public releaseTime;
 
   function TokenTimelock(ERC20Basic _token, address _beneficiary, uint64 _releaseTime) public {
-    require(_releaseTime > now);
+    require(_releaseTime > uint64(block.timestamp));
     token = _token;
     beneficiary = _beneficiary;
     releaseTime = _releaseTime;
@@ -137,7 +137,7 @@ contract TokenTimelock {
    * @notice Transfers tokens held by timelock to beneficiary.
    */
   function release() public {
-    require(now >= releaseTime);
+    require(uint64(block.timestamp) >= releaseTime);
 
     uint256 amount = token.balanceOf(this);
     require(amount > 0);
@@ -198,7 +198,7 @@ contract StandardToken is ERC20, BasicToken {
      * @param _spender address The address which will spend the funds.
      * @return A uint256 specifying the amount of tokens still available for the spender.
      */
-    function allowance(address _owner, address _spender) public constant returns (uint256 remaining) {
+    function allowance(address _owner, address _spender) public view returns (uint256 remaining) {
         return allowed[_owner][_spender];
     }
 
@@ -235,7 +235,7 @@ contract Owned {
     }
 
     modifier onlyOwner {
-        if (msg.sender != owner) revert();
+        require(msg.sender == owner);
         _;
     }
 }
@@ -243,7 +243,7 @@ contract Owned {
 /// TokenDesk token contract ///
 contract TokenDeskToken is StandardToken, Owned {
     string public constant name = "TokenDesk";
-    string public constant symbol = "TDC";
+    string public constant symbol = "TDS";
     uint256 public constant decimals = 18;
 
     /// Maximum tokens to be allocated.
@@ -253,29 +253,29 @@ contract TokenDeskToken is StandardToken, Owned {
     uint256 public constant TOKENS_SALE_HARD_CAP = 14000000 * 10**decimals;
 
     bool public tokenSaleClosed = false;
-    
+
     // contract to be called to release the TD team tokens
     address public timelockContractAddress;
 
     // seconds since 01.01.1970 to 24.12.2017 (both 00:00:00 o'clock UTC)
-    uint64 date24Dec2017 = 1514073600; 
+    uint64 private date24Dec2017 = 1514073600;
 
     // seconds since 01.01.1970 to 01.01.2019 (both 00:00:00 o'clock UTC)
-    uint64 date01Jan2019 = 1546300800; 
-   
+    uint64 private date01Jan2019 = 1546300800;
+
     modifier inProgress {
-        assert(!saleHardCapReached() && !tokenSaleClosed);
+        require(totalSupply < TOKENS_SALE_HARD_CAP && !tokenSaleClosed);
         _;
     }
 
     modifier beforeEnd {
-        assert(!tokenSaleClosed);
+        require(!tokenSaleClosed);
         _;
     }
 
     /// Either sale closed or 24 Dec 2017 passed
     modifier tradingOpen {
-        require(tokenSaleClosed || (now > date24Dec2017));
+        require(tokenSaleClosed || (uint64(block.timestamp) > date24Dec2017));
         _;
     }
 
@@ -284,10 +284,7 @@ contract TokenDeskToken is StandardToken, Owned {
         require(_addresses.length <= 100);
 
         for (uint256 i = 0; i < _tokensInteger.length; i = i.add(1)) {
-            address investor = _addresses[i];
-            uint256 tokens = _tokensInteger[i];
-
-            issueTokens(investor, tokens);
+            issueTokens(_addresses[i], _tokensInteger[i]);
         }
     }
 
@@ -298,9 +295,7 @@ contract TokenDeskToken is StandardToken, Owned {
         // compute without actually increasing it
         uint256 increasedTotalSupply = totalSupply.add(tokens);
         // roll back if hard cap reached
-        if(increasedTotalSupply > TOKENS_SALE_HARD_CAP) {
-            revert();
-        }
+        require(increasedTotalSupply <= TOKENS_SALE_HARD_CAP);
 
         //increase token total supply
         totalSupply = increasedTotalSupply;
@@ -331,11 +326,6 @@ contract TokenDeskToken is StandardToken, Owned {
         totalSupply = totalSupply.add(teamTokens);
 
         tokenSaleClosed = true;
-    }
-
-    /// @return true if the hard cap is reached.
-    function saleHardCapReached() public view returns (bool) {
-        return totalSupply >= TOKENS_SALE_HARD_CAP;
     }
 
     /// Transfer limited by the tradingOpen modifier (either sale closed or 24 Dec 2017 passed)
